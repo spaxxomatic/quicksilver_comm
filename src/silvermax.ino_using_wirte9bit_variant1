@@ -1,0 +1,283 @@
+
+
+/*
+ISR(TIMER1_COMPA_vect) //1000 msec timer 
+{
+	if (t1_div%16 > 8) {ticker = '*';}
+	else {ticker = ' ';};
+	t1_div += 1;
+	if (t1_div%32 == 0) //time to reset min/max
+	{
+		max_value = 0;
+		min_value = 0xFFFF;
+		
+	} 
+}
+
+void timer_init(void){
+
+   //Timer1 is used as 1 sec time base
+   //Timer Clock = 1/1024 of sys clock
+   //Mode = CTC (Clear Timer On Compare)
+   TCCR1B|=((1<<WGM12)|(1<<CS12)|(1<<CS10));
+   //Compare value=976
+   OCR1A=976;
+   TIMSK|=(1<<OCIE1A);  //Output compare 1A interrupt enable
+ 
+}
+*/
+
+#include <NeoSWSerial.h>
+//#include <serial9bit/HardwareSerial.h>
+
+NeoSWSerial ss( 3, 4 );
+
+#define RS485_RXEN_PIN 9
+
+
+uint8_t DELAY_TRANSMISSION_COMPLETE = 10;
+
+void  send_halt_command(uint8_t addr){
+    uint8_t command  = 0x02;
+    char no_of_words  = 1;
+    char buff[10];
+    //byte crc = (0xff^(addr +  no_of_words )) + 1;
+    //payload = addr<<(no_of_words + 2) | command<<(no_of_words + 1) | no_of_words<<no_of_words | cmd_data
+    //chksum = 0xff^payload
+    //return [addr, no_of_words, command, crc]
+    digitalWrite(RS485_RXEN_PIN, HIGH);  //enable transmit
+    uint16_t address_word = 0x0100 ;
+    address_word += addr; //9-th bit set indicates address and start of transmission, see SilverMax User Manual 2.3 final legacy
+    //uint16_t crc = (~(addr + no_of_words )) + 1; //1's complement +1 as indicated on page 19 of sivlermax manual
+    //crc = 0xFF&crc;
+    int crc = (0xff^(addr + command + no_of_words )) + 1; //2 complement : inverting the digity and adding one
+    //uint16_t crc = (~(addr + no_of_words )) + 1; //1's complement +1 as indicated on page 19 of sivlermax manual
+    crc = 0xFF&crc;        
+    Serial.write9bit(address_word);
+    Serial.write9bit(no_of_words);
+    Serial.write9bit(command);
+    Serial.write9bit(crc);
+    /*Serial.write9bit(address_word);
+    Serial.write(no_of_words);
+    Serial.write(crc);
+    */
+    //Serial.write(no_of_words);
+    //Serial.write(crc);    
+    delay(DELAY_TRANSMISSION_COMPLETE); //the buffer needs to be emptied before we switch transmission off
+    digitalWrite(RS485_RXEN_PIN, LOW);  //enable reception    
+    ss.print(address_word, HEX); ss.print(' ');
+    ss.print(no_of_words, HEX ); ss.print(' ');
+    ss.print(command, HEX ); ss.print(' ');
+    ss.println(crc, HEX );
+}
+
+void  send_poll_command(uint8_t addr){
+    
+    char no_of_words  = 0;
+    char buff[10];
+    
+    //byte crc = (0xff^(addr +  no_of_words )) + 1;
+    //payload = addr<<(no_of_words + 2) | command<<(no_of_words + 1) | no_of_words<<no_of_words | cmd_data
+    //chksum = 0xff^payload
+    //return [addr, no_of_words, command, crc]
+    digitalWrite(RS485_RXEN_PIN, HIGH);  //enable transmit
+    delay(100);
+    uint16_t address_word = 0x0100 ;
+    address_word += addr; //9-th bit set indicates address and start of transmission, see SilverMax User Manual 2.3 final legacy
+    //int crc = (0xff^(address_word + no_of_words )) + 1; //2 complement : inverting the digity and adding one
+    //int crc = (0xff^(address_word + no_of_words )) + 1; //2 complement : inverting the digity and adding one
+    uint16_t crc = (~(addr + no_of_words )) + 1; //1's complement +1 as indicated on page 19 of sivlermax manual
+    crc = 0xFF&crc;
+    Serial.write9bit(address_word);
+    delay(DELAY_TRANSMISSION_COMPLETE); //the buffer needs to be emptied before we switch transmission off
+    Serial.write9bit(no_of_words);
+    delay(DELAY_TRANSMISSION_COMPLETE); //the buffer needs to be emptied before we switch transmission off
+    Serial.write9bit(crc);
+    //Serial.write(no_of_words);
+    //Serial.write(crc);    
+    delay(DELAY_TRANSMISSION_COMPLETE); //the buffer needs to be emptied before we switch transmission off
+    digitalWrite(RS485_RXEN_PIN, LOW);  //enable reception    
+    ss.print(addr, HEX); ss.print(' ');
+    ss.print(no_of_words, HEX ); ss.print(' ');
+    ss.println(crc, HEX );
+}
+
+void  send_stepdir_command(uint8_t addr){
+    
+    uint8_t command  = 0x084;
+    char no_of_words  = 1;
+    char buff[10];
+    
+    //payload = addr<<(no_of_words + 2) | command<<(no_of_words + 1) | no_of_words<<no_of_words | cmd_data
+    //chksum = 0xff^payload
+    //return [addr, no_of_words, command, crc]
+    digitalWrite(RS485_RXEN_PIN, HIGH);  //enable transmit
+    delay(100);
+    uint16_t address_word = 0x0100 ;
+    address_word += addr; //9-th bit set indicates address and start of transmission, see SilverMax User Manual 2.3 final legacy
+    int crc = (0xff^(address_word + command + no_of_words )) + 1; //2 complement : inverting the digity and adding one
+    //uint16_t crc = (~(addr + no_of_words )) + 1; //1's complement +1 as indicated on page 19 of sivlermax manual
+    crc = 0xFF&crc;    
+    Serial.write9bit(address_word);
+    Serial.write9bit(no_of_words);
+    Serial.write9bit(command);
+    Serial.write9bit(crc);
+    delay(DELAY_TRANSMISSION_COMPLETE); //the buffer needs to be emptied before we switch transmission off
+    digitalWrite(RS485_RXEN_PIN, LOW);  //enable reception
+    //itoa(addr, buff, 10);
+    ss.print(addr, HEX); ss.print(' ');
+    ss.print(no_of_words, HEX ); ss.print(' ');
+    ss.print(command, HEX ); ss.print(' ');
+    ss.println(crc, HEX );
+    
+    //switch RS485 receive on and wait for a response
+    /*uint16_t i = 0; 
+    for (i = 0;  i < 2000; i++  ){
+
+      if (Serial.available()) {
+        ss.println("! R ");
+        int r = Serial.read();
+        if ((r & 0x0100) != 0) 
+        {
+          ss.println("ACK!!");  
+        }
+        ss.println(r, HEX);
+        delay(20);
+        break;
+      }
+    }
+    */
+}
+
+void sendPlainSerial(uint8_t rep){
+        uint16_t i = 0;
+        digitalWrite(RS485_RXEN_PIN, HIGH);
+        for (i=0; i< 300; i++){
+            Serial.println("abcd12345");      
+            Serial.println(i, DEC); 
+            ss.println(i, DEC );
+        }     
+        delay(20);
+        digitalWrite(RS485_RXEN_PIN, LOW);
+}
+
+bool bSendStepdir = false;
+bool bSendPoll = false;
+bool bSendHalt = false;
+bool bSendPlainSerial = false;
+#define ADDR_START 1
+uint8_t addr = ADDR_START;
+static void handleRxChar( uint8_t c ){    
+      if (c == 's'){
+        bSendStepdir = true;
+      }
+      if (c == 'p'){
+        bSendPoll = true;
+      }   
+      /*if (c == '1'){
+        bSendPlainSerial = true;
+      } */
+      if (c == '+'){
+        addr++;
+      }        
+      if (c == '-'){
+        addr--;
+      }  
+      if (c == '8'){
+        DELAY_TRANSMISSION_COMPLETE++;
+      }        
+      if (c == '2'){
+        DELAY_TRANSMISSION_COMPLETE--;
+      }                   
+      if (c == 'h'){
+        bSendHalt = ! bSendHalt ;
+      }            
+      if (c == 'r'){ //toggle receive
+         digitalWrite(RS485_RXEN_PIN, ! digitalRead(RS485_RXEN_PIN));  
+      }               
+}
+    
+#define LED_PIN 13 //arduino pro mini has a led on pin 13
+
+//NewSoftSerial mySerial(10, 11); // RX, TX
+
+void setup() {
+  // Open serial communications and wait for port to open:
+  Serial.begin(57600, true);
+  //Serial.begin(57600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  ss.attachInterrupt( handleRxChar );
+  ss.begin( 38400 );
+  ss.println("Hello, world");
+  uint16_t i = 0;
+  /*for (i=0; i< 10; i++)
+    Serial.println("abcd12345");
+  */
+  //Serial.println("Goodnight moon!");
+  pinMode(RS485_RXEN_PIN, OUTPUT);
+  digitalWrite(RS485_RXEN_PIN, LOW);  //enable reception
+  // set the data rate for the SoftwareSerial port
+  
+  
+}
+
+uint8_t i;
+void(*cmd_ptr)(uint8_t);  
+char hbuff[8];
+void loop() { // run over and over
+  //check_serial_cmd(); //serial command avail?
+//  if (ss.available()) {
+    //Serial.write(ss.read());
+//  }
+  
+  if (bSendStepdir){
+    i = ADDR_START;    
+    bSendStepdir= false;
+    cmd_ptr = send_stepdir_command;
+  }
+  if (bSendPlainSerial){
+    bSendPlainSerial = false;
+    sendPlainSerial(1);
+  }
+  if (bSendPoll){
+    i = ADDR_START;
+    bSendPoll= false;
+    cmd_ptr = send_poll_command;
+  }
+  if (bSendHalt){
+    send_halt_command(0);
+    cmd_ptr = 0;
+  }  
+  /*
+  if (i > 0 && cmd_ptr != 0){
+    cmd_ptr(i);
+    i++;
+  }else{
+    i = ADDR_START;
+    cmd_ptr = 0;
+  }*/
+  if (cmd_ptr != 0){
+    ss.print("DELAY ");
+    ss.println(DELAY_TRANSMISSION_COMPLETE);
+    ss.print("ADDR ");
+    ss.println(addr);    
+    cmd_ptr(addr);
+    cmd_ptr = 0;
+  }
+  if (Serial.available()) {
+    ss.println("LR ");
+    int r = Serial.read();
+    if ((r & 0x0100) != 0) 
+    {
+          ss.println("ACK!!");  
+        }    
+    
+    //itoa(r, hbuff, 16);
+    ss.println(r>>8, HEX);
+    ss.println(r&0xFF, HEX);
+    //ss.println(char(r));
+    //ss.write("\n\r");
+  }
+}

@@ -1,0 +1,194 @@
+/*
+ * dmx_out.c
+ *
+ *  Created on: 24.11.2011
+ *      Author: Frank Link
+ */
+
+#include <avr/io.h>
+#include <stdint.h>
+#include <avr/interrupt.h>
+#include <avr/pgmspace.h>
+#include <util/delay.h>
+#include <util\atomic.h>    // need "--std=c99"
+
+#include "uart.h"
+#ifndef F_CPU
+#define F_CPU 16000000UL
+#endif
+
+//#ifndef BAUD
+#define BAUD 57600
+//#endif
+#include <util/setbaud.h>
+
+
+//#define DEBUG
+// ********************* user definitions *********************
+
+#define RX0_SIZE	16		                                         // usable: RX0_SIZE + 2 (4 .. 258)
+#define TX0_SIZE	12		                                         // usable: TX0_SIZE + 1 (3 .. 257)
+
+#define PORT_UART_OUT     PORTB
+#define DDR_UART_OUT      DDRB
+#define PIN_UART_OUT      PB2
+
+#ifdef DEBUG
+//   9.600 Baud mit 20MHz bei U2X0 = 0
+#define UBRR_VAL1        129
+#else
+//   9.600 Baud mit 20MHz bei U2X0 = 0
+//#define UBRR_VAL1        129
+#endif
+
+// ********************* local definitions *********************
+#define ROLLOVER( x, max )	x = ++x >= max ? 0 : x
+
+volatile uint16_t rx_buff[RX0_SIZE];
+volatile uint8_t  rx_in = 0;
+volatile uint8_t  rx_out = 0;
+volatile uint16_t tx_buff[TX0_SIZE];
+volatile uint8_t  tx_in = 0;
+volatile uint8_t  tx_out = 0;
+
+void setTransmitMode( void )
+{
+	PORT_UART_OUT |= ( 1 << PIN_UART_OUT );
+}
+
+void setReceiveMode( void )
+{
+	PORT_UART_OUT &= ~( 1 << PIN_UART_OUT );
+}
+
+void uart_init( void )
+{
+	DDR_UART_OUT  |= ( 1 << PIN_UART_OUT );
+	setReceiveMode();
+
+	//USART
+	//UBRR0H = UBRR_VAL1 >> 8;                                         // store baudrate (upper byte)
+	//UBRR0L = UBRR_VAL1 & 0xFF;
+	
+    //UBRR0H = UBRRH_VALUE;
+	//UBRR0L = UBRRL_VALUE;	
+	UBRR0H = 0;
+    UBRR0L = 16;	
+	
+#ifdef DEBUG
+	                                                                 // 8n1 for debug
+#else
+	//UCSR0C |= ( 1 << UCSZ02 ) | ( 1 << UCSZ01 ) | ( 1 << UCSZ00 );   // 9n1 for doing
+	//UCSR0A |= MPCM0;
+  UCSR0C |= ( 1 << UCSZ01 ) | ( 1 << UCSZ00 );                     // 9n1 
+  UCSR0B |= ( 1 << UCSZ02 );	
+#endif
+	UCSR0B |= ( 1 << RXEN0 )  | ( 1 << TXEN0 ) |
+			  ( 1 << RXCIE0 ) | ( 1 << TXCIE0 );                     // activate UART0 TX, RX, RXINT, TXINT
+
+	UDR0 = 0;
+	rx_in = rx_out;			                                         // set buffer empty
+	tx_in = tx_out;
+}
+
+uint8_t uart_hit( void )
+{
+  return rx_out ^ rx_in;		                                     // rx_in modified by interrupt !
+}
+
+uint8_t uart_ready( void )
+{
+	uint8_t i = tx_in;
+
+	ROLLOVER( i, TX0_SIZE );
+	return tx_out ^ i;		                                         // 0 = busy
+}
+
+ISR (USART_TX_vect)
+{
+	if( tx_in == tx_out )                                            // nothing to sent
+	{
+		UCSR0B &= ~( 1 << TXCIE0 );                                  // disable TX interrupt
+		return;
+	}
+	UCSR0B &= ~( 1 << TXB80 );
+	if ( tx_buff[tx_out] & 0x0100 )
+	{
+		UCSR0B |= ( 1 << TXB80 );
+	}
+	UDR0 = tx_buff[tx_out];
+	ROLLOVER( tx_out, TX0_SIZE );
+}
+
+ISR (USART_RX_vect)
+{
+	uint8_t i = rx_in;
+	uint8_t data, res;
+
+	ROLLOVER( i, RX0_SIZE );
+	if( i == rx_out )                                                // buffer overflow
+	{
+		UCSR0B &= ~( 1 << RXCIE0 );			                         // disable RX interrupt
+		return;
+	}
+
+	/* Get 9th bit, then data from buffer */
+	res = UCSR0B;
+	if ( res & ( 1 << RXB80 ) )
+	{
+		data = UDR0;
+		ATOMIC_BLOCK(ATOMIC_FORCEON)
+		{
+			rx_buff[rx_in] = ( data | 0x0100 );
+		}
+	}
+	else
+	{
+		data = UDR0;
+		rx_buff[rx_in] = data;
+	}
+	rx_in = i;
+}
+
+
+void uart_putc ( uint16_t ch )
+{
+	uint8_t i = tx_in;
+
+	ROLLOVER( i, TX0_SIZE );
+	tx_buff[tx_in] = ch;
+	while( i == tx_out);		                                     // until at least one byte free
+							                                         // tx_out modified by interrupt !
+	tx_in = i;
+	UCSR0B |= ( 1 << TXCIE0 );                                       // enable TX interrupt
+	UDR0 = 0;
+}
+
+void uart_puts (const char * s)
+{
+	while (*s)
+	{
+		uart_putc (*s++);
+	}
+}
+
+void uart_puts_p (const char * progmem_s)
+{
+	char ch;
+
+	while ((ch = pgm_read_byte (progmem_s++)) != '\0')
+	{
+		uart_putc (ch);
+	}
+}
+
+uint16_t uart_getc(void)
+{
+	uint16_t data;
+
+	while( !uart_hit() );			                                 // until at least one byte in
+	data = rx_buff[rx_out];		                                     // get byte
+	ROLLOVER( rx_out, RX0_SIZE );
+	UCSR0B |= ( 1 << RXEN0 );				                         // enable RX interrupt
+	return data;
+}
