@@ -4,7 +4,6 @@
 void sendmsg(byte* msg, uint8_t len){
     #ifdef DEBUG_DUMP_MSG
     for (uint8_t i=0; i<len; i++){ swserial.print(msg[i], HEX); swserial.print(':') ;}
-    swserial.println();
     #endif
 
     digitalWrite(RS485_RXEN_PIN, HIGH);  //enable transmit
@@ -16,10 +15,19 @@ void sendmsg(byte* msg, uint8_t len){
       Serial.write((int) msg[i]); 
       delayMicroseconds(INTERBIT_DELAY_US);
     }
-    int crc = (0xff^(sum)) + 1; //2 complement : inverting the digity and adding one
+    uint16_t crc;
+    /*if (len == 2){ // a poll command 
+      crc = 0xFF & ((~(msg[0])) + 1); //1's complement +1 as indicated on page 19 of silvermax manual
+    }else{
+      crc = 0xFF & ((0xff^(sum)) + 1); //2 complement : inverting the digity and adding one
+    }*/
+    crc = 0xFF & ((0xff^(sum)) + 1); //2 complement : inverting the digity and adding one
     Serial.write(crc); 
     delayMicroseconds(INTERBIT_DELAY_US);    
     digitalWrite(RS485_RXEN_PIN, LOW);  //enable reception    
+    #ifdef DEBUG_DUMP_MSG
+      swserial.println(crc, HEX);
+    #endif
 }
 
 void  send_simple_command(uint8_t addr, uint8_t command){
@@ -45,8 +53,10 @@ void  qs_poll(uint8_t addr){
     //uint16_t crc = 0xFF & ((~(addr)) + 1); //1's complement +1 as indicated on page 19 of silvermax manual
     //byte msg[] = {addr, 0, crc};
     //sendmsg(msg, 3);
+    uint16_t crc = 0xFF & ((~(addr)) + 1); //1's complement +1 as indicated on page 19 of silvermax manual
+    swserial.println(crc, HEX);
     byte msg[] = {addr,0};
-    sendmsg(msg, 2);
+    sendmsg(msg, sizeof(msg));
 }
 
 void  qs_enable_stepdir(uint8_t addr){
@@ -57,20 +67,19 @@ void  qs_move_abs_timebased(uint8_t addr, long position, long acc_time, long tot
   byte no_of_words  = 0x11;
  
   byte msg[] = {addr, no_of_words, QS_CMD_MOVEABS_TIMEBASED, 
-  position>>24, position>>16, position>>8, position,
+  (byte) position>>24, (byte) position>>16, (byte) position>>8, (byte) position,
             0x00, 0x04, 0xEA, 0x4B, 0x19, 0x99, 
             0x99, 0x7F, 0x00, 0x00, 0x00, 0x00};
   sendmsg(msg, sizeof(msg));
-  send_simple_command(addr, QS_CMD_STEPDIR);
 }
 
-void qs_move_rel(uint8_t addr){
+void qs_move_rel_velocitybased(uint8_t addr){
   byte no_of_words  = 0x11;
  
-  byte msg[] = {addr, no_of_words, QS_CMD_MOVE, 
-            0x00, 0x0f, 0x27, 0x10, //distance
-            0x00, 0x04, 0xEA, 0x4B, //acceleration
-            0x19, 0x99, 0x99, 0x7F, //velocity
+  byte msg[] = {addr, no_of_words, QS_CMD_MOVEREL_VELOCITYBASED,
+            0x00, 0x02, 0x27, 0x10, //distance
+            0x00, 0x14, 0xEA, 0x4B, //acceleration
+            0x22, 0xFF, 0x99, 0x7F, //velocity
             0x00, 0x00, 0x00, 0x00}; //stop enable / stop state
 
   /* int sum = 0;

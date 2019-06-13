@@ -10,5 +10,6 @@ extern NeoSWSerial swserial;
 
 void qs_halt(uint8_t addr);
 void qs_poll(uint8_t addr);
-void qs_move(uint8_t addr);
+void qs_move_rel_velocitybased(uint8_t addr);
+void  qs_move_abs_timebased(uint8_t addr, long position, long acc_time, long total_time);
 void qs_enable_stepdir(uint8_t addr);
