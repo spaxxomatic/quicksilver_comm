@@ -1,7 +1,7 @@
 #include "quicksilver_commands.h"
 #include "qscomm.h"
 
-void sendmsg(byte* msg, uint8_t len){
+void send_servo_msg(byte* msg, uint8_t len){
     #ifdef DEBUG_DUMP_MSG
     for (uint8_t i=0; i<len; i++){ swserial.print(msg[i], HEX); swserial.print(':') ;}
     #endif
@@ -35,7 +35,7 @@ void  send_simple_command(uint8_t addr, uint8_t command){
     //uint16_t crc = (~(addr + no_of_words )) + 1; //1's complement +1 as indicated on page 19 of sivlermax manual
     //crc = 0xFF&crc;    
     byte msg[] = {addr, 1, command};    
-    sendmsg(msg, 3);
+    send_servo_msg(msg, 3);
     /*
     ss.print(addr, HEX); ss.print(' ');
     ss.print(no_of_words, HEX ); ss.print(' ');
@@ -56,7 +56,7 @@ void  qs_poll(uint8_t addr){
     uint16_t crc = 0xFF & ((~(addr)) + 1); //1's complement +1 as indicated on page 19 of silvermax manual
     swserial.println(crc, HEX);
     byte msg[] = {addr,0};
-    sendmsg(msg, sizeof(msg));
+    send_servo_msg(msg, sizeof(msg));
 }
 
 void  qs_enable_stepdir(uint8_t addr){
@@ -70,7 +70,7 @@ void  qs_move_abs_timebased(uint8_t addr, long position, long acc_time, long tot
   (byte) position>>24, (byte) position>>16, (byte) position>>8, (byte) position,
             0x00, 0x04, 0xEA, 0x4B, 0x19, 0x99, 
             0x99, 0x7F, 0x00, 0x00, 0x00, 0x00};
-  sendmsg(msg, sizeof(msg));
+  send_servo_msg(msg, sizeof(msg));
 }
 
 void qs_move_rel_velocitybased(uint8_t addr){
@@ -89,6 +89,6 @@ void qs_move_rel_velocitybased(uint8_t addr){
   int crc = (0xff^(sum)) + 1; //2 complement : inverting the digity and adding one
   msg[sizeof(msg)-1] = 0xff & crc; //last byte is the crc
   */
-  sendmsg(msg, sizeof(msg));
+  send_servo_msg(msg, sizeof(msg));
 }
 

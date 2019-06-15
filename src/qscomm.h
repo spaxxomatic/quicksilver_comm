@@ -8,6 +8,7 @@
 #define DEBUG_DUMP_MSG
 extern NeoSWSerial swserial;
 
+void send_servo_msg(byte* msg, uint8_t len);
 void qs_halt(uint8_t addr);
 void qs_poll(uint8_t addr);
 void qs_move_rel_velocitybased(uint8_t addr);
